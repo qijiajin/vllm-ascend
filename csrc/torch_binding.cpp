@@ -1227,6 +1227,67 @@ at::Tensor npu_sparse_attn_sharedkv_metadata_npu(
     return output;
 }
 
+at::Tensor npu_fused_infer_attention_sink_metadata_npu(
+    int64_t num_heads_q,
+    int64_t num_heads_kv,
+    int64_t head_dim_qk,
+    int64_t head_dim_v,
+    const c10::optional<at::Tensor> &actual_seq_lengths,
+    const c10::optional<at::Tensor> &actual_seq_lengths_kv,
+    int64_t batch_size,
+    int64_t sparse_mode,
+    int64_t pre_tokens,
+    int64_t next_tokens,
+    c10::string_view input_layout,
+    c10::string_view input_layout_kv,
+    int64_t sink_num,
+    int64_t k_sink_num,
+    bool batch_invariant,
+    int64_t rope_head_dim,
+    int64_t block_size,
+    int64_t aic_core_num,
+    int64_t aiv_core_num,
+    const c10::string_view device)
+{
+    constexpr int64_t OUTPUT_SIZE = 1024;
+    at::Device output_device = at::Device(std::string(device));
+    if (actual_seq_lengths.has_value()) {
+        output_device = actual_seq_lengths.value().device();
+    } else if (actual_seq_lengths_kv.has_value()) {
+        output_device = actual_seq_lengths_kv.value().device();
+    }
+    at::Tensor output = torch::empty({OUTPUT_SIZE},
+                                     torch::dtype(torch::kInt32).device(output_device));
+
+    auto actual_seq_lengths_val = get_valid_tensor(actual_seq_lengths, output_device);
+    auto actual_seq_lengths_kv_val = get_valid_tensor(actual_seq_lengths_kv, output_device);
+
+    std::string input_layout_str = std::string(input_layout);
+    std::string input_layout_kv_str = std::string(input_layout_kv);
+    char *input_layout_ptr = const_cast<char *>(input_layout_str.c_str());
+    char *input_layout_kv_ptr = const_cast<char *>(input_layout_kv_str.c_str());
+
+    if (batch_invariant) {
+        EXEC_NPU_CMD(aclnnAiInfraFusedInferAttentionSinkMetadataV2,
+                     actual_seq_lengths_val, actual_seq_lengths_kv_val,
+                     num_heads_q, num_heads_kv, head_dim_qk, head_dim_v,
+                     batch_size, sparse_mode, pre_tokens, next_tokens,
+                     input_layout_ptr, input_layout_kv_ptr,
+                     sink_num, k_sink_num, batch_invariant,
+                     rope_head_dim, block_size,
+                     aic_core_num, aiv_core_num, output);
+    } else {
+        EXEC_NPU_CMD(aclnnAiInfraFusedInferAttentionSinkMetadata,
+                     actual_seq_lengths_val, actual_seq_lengths_kv_val,
+                     num_heads_q, num_heads_kv, head_dim_qk, head_dim_v,
+                     batch_size, sparse_mode, pre_tokens, next_tokens,
+                     input_layout_ptr, input_layout_kv_ptr,
+                     sink_num, k_sink_num, rope_head_dim, block_size,
+                     aic_core_num, aiv_core_num, output);
+    }
+    return output;
+}
+
 at::Tensor npu_quant_lightning_indexer_metadata_npu(
     int64_t num_heads_q, int64_t num_heads_k, int64_t head_dim, int64_t query_quant_mode, int64_t key_quant_mode,
     const c10::optional<at::Tensor> &actual_seq_lengths_query, const c10::optional<at::Tensor> &actual_seq_lengths_key, int64_t batch_size,
@@ -2535,6 +2596,33 @@ TORCH_LIBRARY_EXPAND(CONCAT(_C, _ascend), ops)
         ") -> (Tensor metadata)"
         );
     ops.impl("npu_sparse_attn_sharedkv_metadata", torch::kPrivateUse1, &vllm_ascend::npu_sparse_attn_sharedkv_metadata_npu);
+
+    ops.def(
+        "npu_fused_infer_attention_sink_metadata("
+            "int num_heads_q, "
+            "int num_heads_kv, "
+            "int head_dim_qk, "
+            "int head_dim_v, "
+            "Tensor? actual_seq_lengths=None, "
+            "Tensor? actual_seq_lengths_kv=None, "
+            "int batch_size=0, "
+            "int sparse_mode=0, "
+            "int pre_tokens=2147483647, "
+            "int next_tokens=2147483647, "
+            "str input_layout=\"TND\", "
+            "str input_layout_kv=\"TND\", "
+            "int sink_num=0, "
+            "int k_sink_num=0, "
+            "bool batch_invariant=False, "
+            "int rope_head_dim=0, "
+            "int block_size=0, "
+            "int aic_core_num=24, "
+            "int aiv_core_num=48, "
+            "str device=\"npu\""
+        ") -> Tensor"
+    );
+    ops.impl("npu_fused_infer_attention_sink_metadata", torch::kPrivateUse1,
+             &vllm_ascend::npu_fused_infer_attention_sink_metadata_npu);
 
     ops.def(
         "npu_quant_lightning_indexer_metadata("

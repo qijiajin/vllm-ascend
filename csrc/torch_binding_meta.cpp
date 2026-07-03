@@ -1008,6 +1008,46 @@ at::Tensor npu_sparse_attn_sharedkv_metadata_meta(
     return output;
 }
 
+at::Tensor npu_fused_infer_attention_sink_metadata_meta(
+    int64_t num_heads_q,
+    int64_t num_heads_kv,
+    int64_t head_dim_qk,
+    int64_t head_dim_v,
+    const c10::optional<at::Tensor> &actual_seq_lengths,
+    const c10::optional<at::Tensor> &actual_seq_lengths_kv,
+    int64_t batch_size,
+    int64_t sparse_mode,
+    int64_t pre_tokens,
+    int64_t next_tokens,
+    c10::string_view input_layout,
+    c10::string_view input_layout_kv,
+    int64_t sink_num,
+    int64_t k_sink_num,
+    bool batch_invariant,
+    int64_t rope_head_dim,
+    int64_t block_size,
+    int64_t aic_core_num,
+    int64_t aiv_core_num,
+    const c10::string_view device)
+{
+    constexpr int64_t OUTPUT_SIZE = 1024;
+    at::Tensor output;
+    if (actual_seq_lengths.has_value()) {
+        output = torch::empty({OUTPUT_SIZE}, torch::dtype(torch::kInt32).device(actual_seq_lengths.value().device()));
+    } else if (actual_seq_lengths_kv.has_value()) {
+        output = torch::empty({OUTPUT_SIZE}, torch::dtype(torch::kInt32).device(actual_seq_lengths_kv.value().device()));
+    } else {
+        auto deviceOri = at::Device(std::string(device));
+        std::string device_str = "meta";
+        if (deviceOri.has_index()) {
+            device_str += ":";
+            device_str += std::to_string(deviceOri.index());
+        }
+        output = torch::empty({OUTPUT_SIZE}, torch::dtype(torch::kInt32).device(at::Device(device_str)));
+    }
+    return output;
+}
+
 at::Tensor npu_quant_lightning_indexer_metadata_meta(
     int64_t num_heads_q, int64_t num_heads_k, int64_t head_dim, int64_t query_quant_mode, int64_t key_quant_mode,
     const c10::optional<at::Tensor> &actual_seq_lengths_query, const c10::optional<at::Tensor> &actual_seq_lengths_key, int64_t batch_size,
@@ -1712,6 +1752,7 @@ TORCH_LIBRARY_IMPL_EXPAND(CONCAT(_C, _ascend), Meta, ops) {
     ops.impl("npu_quant_lightning_indexer_metadata", &vllm_ascend::meta::npu_quant_lightning_indexer_metadata_meta);
     ops.impl("npu_sparse_attn_sharedkv", &vllm_ascend::meta::npu_sparse_attn_sharedkv_meta);
     ops.impl("npu_sparse_attn_sharedkv_metadata", &vllm_ascend::meta::npu_sparse_attn_sharedkv_metadata_meta);
+    ops.impl("npu_fused_infer_attention_sink_metadata", &vllm_ascend::meta::npu_fused_infer_attention_sink_metadata_meta);
     ops.impl("npu_hc_post", &vllm_ascend::meta::npu_hc_post_meta);
     ops.impl("npu_hc_pre", &vllm_ascend::meta::npu_hc_pre_meta);
     ops.impl("npu_hc_pre_v2", &vllm_ascend::meta::npu_hc_pre_meta);
