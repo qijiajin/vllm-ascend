@@ -87,6 +87,11 @@ env_variables: dict[str, Callable[[], Any]] = {
     # (safe for Ascend 910B/A3). Set to a positive value to override when
     # auto-detection is unavailable or for debugging UB overflow issues.
     "VLLM_ASCEND_ROPE_UB_SIZE_KB": lambda: int(os.getenv("VLLM_ASCEND_ROPE_UB_SIZE_KB") or 0),
+    # Number of Kimi K3 routed experts to instantiate and load for functional
+    # debugging only; not sensitive. 0 (default) loads every checkpoint expert.
+    # Nonzero values must be >= routing top-k, <= checkpoint expert count,
+    # and divisible by the expert parallel world size.
+    "VLLM_ASCEND_KIMI_K3_MAX_LOADED_EXPERTS": lambda: os.getenv("VLLM_ASCEND_KIMI_K3_MAX_LOADED_EXPERTS", "0"),
 }
 
 # end-env-vars-definition
